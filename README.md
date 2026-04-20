@@ -1,3 +1,7 @@
+Muhammad Talha Syed, 21i-0277, Generative AI Section C, Instructor Sir Akhtar Jamil
+
+
+
 # Generative AI — Assignment 2 (Implementation)
 
 This repository contains **three independent tasks** implemented in a single, clean, reproducible project:
@@ -113,6 +117,5 @@ Outputs go under `artifacts/q3/`.
 - For Q1/Q2 Kaggle downloads, install and configure Kaggle API credentials:
   - Place `kaggle.json` at `~/.kaggle/kaggle.json` (Linux/macOS) or `%USERPROFILE%\.kaggle\kaggle.json` (Windows).
 
-## (Removed)
-The remainder of this README previously described an older layout; it has been removed to match the current flat-file structure.
+
 
