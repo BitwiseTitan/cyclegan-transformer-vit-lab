@@ -1,0 +1,39 @@
+# Core
+numpy
+pandas
+tqdm
+pyyaml
+
+# PyTorch (GPU on Colab; local depends on install)
+torch
+torchvision
+
+# Vision / image IO
+pillow
+opencv-python
+
+# Plotting / metrics
+matplotlib
+seaborn
+scikit-learn
+
+# Q1 (CycleGAN)
+torchmetrics
+
+# Q2 (Transformers MT)
+transformers
+datasets
+tokenizers
+sentencepiece
+evaluate
+sacrebleu
+
+# Q3 (ViT pretrained option)
+timm
+
+# Demo UI (Q1)
+flask
+
+# Dataset download helpers
+kaggle
+requests
