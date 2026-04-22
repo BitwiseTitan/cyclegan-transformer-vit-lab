@@ -1,0 +1,89 @@
+Major prompts / requirements given by user (condensed)
+======================================================
+
+1) Role + deliverable style
+- "You are my senior ML engineer and research implementation partner."
+- "Focus only on implementation, experiments, evaluation, saving results, and a minimal working demo where required."
+- "Do NOT give me only theory. I want actual implementation-oriented help. Production-like student project code, not toy pseudocode."
+
+2) Must read assignment guidelines PDF
+- "READ THE PDF IN THE REPO FOR IMPLEMENTATION GUIDELINES."
+- Follow PDF requirements for each question (CycleGAN + UI; MT + BLEU; ViT vs CNN + curves/confusion matrix optional).
+
+3) Project goal: 3 independent tasks in one repository
+- Q1: CycleGAN for person face ↔ sketch translation
+- Q2: English-to-Urdu machine translation using Transformers
+- Q3: Vision Transformer vs CNN on CIFAR-10
+
+4) Critical repository rule (initial spec)
+- "ALL PYTHON SOURCE CODE MUST LIVE IN ONE DIRECTORY ONLY: src/"
+- "Do not create separate code directories like q1_cyclegan/, q2_translation/, q3_vit_vs_cnn/, common/."
+- Use flat, prefixed filenames inside src/.
+
+5) Repository structure (initial spec)
+- Create:
+  - README.md, requirements.txt, .gitignore
+  - src/ with common_* utilities and q1_*, q2_*, q3_* files
+  - data/q1, data/q2, data/q3
+  - artifacts/q1, artifacts/q2, artifacts/q3
+
+6) Very important data rule
+- Implement src/download_data.py FIRST (before training pipelines).
+- download_data.py requirements:
+  - run from project root
+  - create data/q1, data/q2, data/q3
+  - support --task q1|q2|q3|all
+  - idempotent (skip if already present)
+  - clear progress + final paths
+  - use current repo directory as base path
+  - Kaggle download if possible; otherwise print manual steps + exact placement targets
+  - Q3 may use torchvision download but still store under data/q3
+
+7) Required development/run order (initial spec)
+- "Create repository skeleton"
+- "Implement download_data.py"
+- "Run python src/download_data.py --task all"
+- "Verify data exists under data/q1, data/q2, data/q3"
+- "Then continue with Q1, Q2, Q3 implementation"
+
+8) General requirements
+- Use Python, prefer PyTorch
+- Clean modular reproducible code; clear comments per function/module
+- Colab-friendly
+- Configurable hyperparameters (config files or argparse)
+- Save training outputs/plots/checkpoints/sample predictions in organized folders
+- Pragmatic compute/time choices; provide lighter but valid versions if needed
+- Import style compatible with running from repo root
+
+9) Scope constraint
+- "Ignore the LNCS report for now" (at that phase), focus on implementation.
+
+10) Later change to repository layout
+- "I deleted the src, we will keep code in the open like right now"
+- "Fix any path changes in the code"
+- Provide commands to init venv and start download_data.py.
+
+11) Kaggle API token workflow prompts
+- Asked where to set Kaggle token; how to locate kaggle.json; confirmed placement in %USERPROFILE%\.kaggle\kaggle.json.
+- Needed CLI usage guidance using venv python module invocation.
+
+12) Execution requirement: save artefacts during runs (no separate post steps)
+- "In each execution, results should also be saved at that time"
+- "I must not need to run metrics, plotting separately afterwards"
+- Add clear terminal progression output while running.
+
+13) Q2 pragmatic pivot prompts
+- Address multiple runtime issues (transformers API differences, missing accelerate, OOM on 4GB GPU, HF cache on C:\ drive full).
+- "Cant we use an easier and simpler approach?"
+- "Yes, lets switch to a custom version" (custom Transformer MT avoiding HF)
+- Improve MT with beam search/label smoothing/no-repeat ngram and longer training (e.g., 30 epochs)
+- Compute BLEU every 5 epochs and show progress bars.
+
+14) Q3 run automation prompt
+- "Run these in one go such that CNN trains first, then ViT, then pretrained ViT"
+- Review artefacts after completion.
+
+15) Reporting artifact prompt (later phase)
+- "Make a summary.md ... describe everything about the project in detail, and also describe the results in it"
+- "Create a PROMPTS.txt file and add all the major prompts which I gave you for this project"
+

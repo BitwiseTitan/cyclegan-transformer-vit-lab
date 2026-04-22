@@ -25,12 +25,16 @@ def save_curves(
     ensure_dir(out_path.parent)
     plt.figure(figsize=(7, 4))
     for name, ys in curves.items():
-        plt.plot(list(range(1, len(ys) + 1)), list(ys), label=name)
+        xs = list(range(1, len(ys) + 1))
+        ys = list(ys)
+        # Markers ensure single-epoch runs are still visible.
+        plt.plot(xs, ys, label=name, linewidth=2, marker="o", markersize=4)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     if title:
         plt.title(title)
     plt.legend()
+    plt.grid(True, alpha=0.25)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()

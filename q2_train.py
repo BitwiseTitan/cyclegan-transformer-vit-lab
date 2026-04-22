@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -54,12 +55,26 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--num_train_epochs", type=int, default=cfg.num_train_epochs)
     p.add_argument("--seed", type=int, default=cfg.seed)
     p.add_argument("--max_train_lines", type=int, default=0, help="If >0, limit number of sentence pairs for quick runs.")
+    p.add_argument("--grad_accum_steps", type=int, default=1, help="Gradient accumulation steps (helps low VRAM).")
+    p.add_argument("--gradient_checkpointing", action="store_true", help="Enable gradient checkpointing (saves VRAM).")
+    p.add_argument("--no_fp16", action="store_true", help="Disable fp16 even on CUDA.")
     return p.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
     seed_everything(args.seed)
+
+    import torch
+
+    # Force HF caches into this repo (use D: drive) if user didn't set them.
+    # This avoids filling C:\\Users\\<name>\\.cache\\huggingface
+    repo_cache = project_root() / ".hf_cache"
+    repo_cache.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("HF_HOME", str(repo_cache))
+    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(repo_cache / "hub"))
+    os.environ.setdefault("TRANSFORMERS_CACHE", str(repo_cache / "transformers"))
+    os.environ.setdefault("HF_DATASETS_CACHE", str(repo_cache / "datasets"))
 
     from datasets import Dataset
     from transformers import (
@@ -96,8 +111,24 @@ def main() -> None:
     ds_val = Dataset.from_dict({"en": [en[i] for i in val_idx], "ur": [ur[i] for i in val_idx]})
     print(f"[q2] train_pairs={len(ds_train)} val_pairs={len(ds_val)}")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=True)
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
+    print(f"[q2] HF cache dir: {repo_cache}")
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=True, cache_dir=str(repo_cache))
+    # Prefer safetensors to avoid torch.load security restriction on older torch versions.
+    try:
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            args.model_name,
+            cache_dir=str(repo_cache),
+            use_safetensors=True,
+        )
+    except TypeError:
+        # Older transformers may not support `use_safetensors` kwarg.
+        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name, cache_dir=str(repo_cache))
+
+    if args.gradient_checkpointing and hasattr(model, "gradient_checkpointing_enable"):
+        model.gradient_checkpointing_enable()
+        # Required when using gradient checkpointing in many seq2seq models
+        if hasattr(model.config, "use_cache"):
+            model.config.use_cache = False
 
     # mBART language codes (AutoTokenizer for mbart supports these attributes)
     src_lang = "en_XX"
@@ -112,18 +143,14 @@ def main() -> None:
         forced_bos_token_id = None
 
     def preprocess(batch: Dict[str, List[str]]) -> Dict[str, Any]:
+        # Newer Transformers prefers `text_target` over `as_target_tokenizer()`.
         model_inputs = tokenizer(
             batch["en"],
+            text_target=batch["ur"],
             max_length=args.max_source_len,
+            max_target_length=args.max_target_len,
             truncation=True,
         )
-        with tokenizer.as_target_tokenizer():
-            labels = tokenizer(
-                batch["ur"],
-                max_length=args.max_target_len,
-                truncation=True,
-            )
-        model_inputs["labels"] = labels["input_ids"]
         return model_inputs
 
     ds_train_tok = ds_train.map(preprocess, batched=True, remove_columns=["en", "ur"])
@@ -132,15 +159,25 @@ def main() -> None:
     collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
     bleu = evaluate.load("sacrebleu")
 
-    def compute_metrics(eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
-        preds, labels = eval_pred
+    def compute_metrics(eval_pred: Any) -> Dict[str, float]:
+        # transformers>=5 passes an EvalPrediction object
+        preds = getattr(eval_pred, "predictions", None)
+        labels = getattr(eval_pred, "label_ids", None)
+        if preds is None or labels is None:
+            # fallback for older behavior (tuple)
+            preds, labels = eval_pred
+
         if isinstance(preds, tuple):
             preds = preds[0]
+
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         # replace -100 in labels
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-        bleu_out = bleu.compute(predictions=[p.strip() for p in decoded_preds], references=[[l.strip()] for l in decoded_labels])
+        bleu_out = bleu.compute(
+            predictions=[p.strip() for p in decoded_preds],
+            references=[[l.strip()] for l in decoded_labels],
+        )
         return {"bleu": float(bleu_out["score"])}
 
     out_root = Path(args.artifacts_dir)
@@ -150,9 +187,10 @@ def main() -> None:
     print(f"[q2] run_dir={run_dir}")
     print(f"[q2] model_name={args.model_name} src_lang=en_XX tgt_lang=ur_PK")
 
+    # Transformers v5 uses `eval_strategy` (not `evaluation_strategy`).
     training_args = Seq2SeqTrainingArguments(
         output_dir=str(run_dir / "checkpoints"),
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         logging_strategy="steps",
         logging_steps=50,
@@ -160,8 +198,9 @@ def main() -> None:
         per_device_train_batch_size=int(args.train_batch_size),
         per_device_eval_batch_size=int(args.eval_batch_size),
         num_train_epochs=float(args.num_train_epochs),
+        gradient_accumulation_steps=int(args.grad_accum_steps),
         predict_with_generate=True,
-        fp16=True,
+        fp16=(torch.cuda.is_available() and (not args.no_fp16)),
         save_total_limit=2,
         report_to=[],
         load_best_model_at_end=True,
@@ -169,12 +208,13 @@ def main() -> None:
         greater_is_better=True,
     )
 
+    # transformers>=5 uses `processing_class` instead of `tokenizer`
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
         train_dataset=ds_train_tok,
         eval_dataset=ds_val_tok,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=collator,
         compute_metrics=compute_metrics,
     )
